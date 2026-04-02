@@ -1,0 +1,24 @@
+[Unit]
+Description=Production Deadlock Detector (eBPF)
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/production-deadlock-detection/src/ebpf
+EnvironmentFile=-/etc/default/deadlock-detector
+ExecStart=/opt/production-deadlock-detection/src/ebpf/loader
+Restart=always
+RestartSec=3
+LimitMEMLOCK=infinity
+
+# Security hardening (needs root for BPF)
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/var/log/deadlock-detector
+StandardOutput=append:/var/log/deadlock-detector/loader.log
+StandardError=append:/var/log/deadlock-detector/loader.log
+
+[Install]
+WantedBy=multi-user.target

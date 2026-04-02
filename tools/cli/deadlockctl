@@ -1,0 +1,176 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+EBPF_DIR="$ROOT_DIR/src/ebpf"
+LOG_DIR="$ROOT_DIR/output/daemon"
+PID_FILE="$LOG_DIR/loader.pid"
+LOG_FILE="$LOG_DIR/loader.log"
+SERVICE_NAME="deadlock-detector"
+
+usage() {
+    cat <<EOF
+Usage: $(basename "$0") <command>
+
+Commands:
+  build            Build eBPF object and loader
+    ui               Launch interactive terminal UI
+  start            Start detector (systemd if installed, else local background)
+  stop             Stop detector
+  restart          Restart detector
+  status           Show detector status
+  logs             Tail logs
+  dashboard        Follow dashboard + alert lines only
+  benchmark        Run Phase 3 overhead benchmark
+  validate-phase2  Run Phase 2 signal-quality validation
+    readiness        Check deployment readiness against local artifacts
+    soak             Run a production-style canary soak
+  install-service  Install and start systemd service
+  uninstall-service Stop and disable systemd service
+EOF
+}
+
+service_installed() {
+    systemctl list-unit-files | grep -q "^${SERVICE_NAME}.service"
+}
+
+build_loader() {
+    pushd "$EBPF_DIR" >/dev/null
+    make all
+    popd >/dev/null
+}
+
+start_local() {
+    mkdir -p "$LOG_DIR"
+    if [[ -f "$PID_FILE" ]] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
+        echo "local loader already running pid=$(cat "$PID_FILE")"
+        return 0
+    fi
+
+    pushd "$EBPF_DIR" >/dev/null
+    sudo --preserve-env=TARGET_PIDS,TARGET_CGROUP_IDS,TARGET_COMM,ALLOW_PROFILER_SIGNALS,STATIC_FINDINGS_PATH,PROFILER_PATTERNS_PATH \
+        nohup ./loader >>"$LOG_FILE" 2>&1 &
+    echo $! > "$PID_FILE"
+    popd >/dev/null
+
+    sleep 1
+    if kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
+        echo "started local loader pid=$(cat "$PID_FILE")"
+    else
+        echo "failed to start local loader"
+        return 1
+    fi
+}
+
+stop_local() {
+    if [[ ! -f "$PID_FILE" ]]; then
+        echo "local loader pid file not found"
+        return 0
+    fi
+
+    local pid
+    pid="$(cat "$PID_FILE")"
+    if kill -0 "$pid" 2>/dev/null; then
+        sudo kill "$pid" || true
+        sleep 1
+    fi
+    rm -f "$PID_FILE"
+    echo "stopped local loader"
+}
+
+status_local() {
+    if [[ -f "$PID_FILE" ]] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
+        echo "local loader running pid=$(cat "$PID_FILE")"
+    else
+        echo "local loader not running"
+    fi
+}
+
+case "${1:-}" in
+    build)
+        build_loader
+        ;;
+    ui)
+        exec "$ROOT_DIR/tools/cli/deadlocktui"
+        ;;
+    start)
+        if service_installed; then
+            sudo systemctl start "$SERVICE_NAME"
+            sudo systemctl --no-pager --full status "$SERVICE_NAME" || true
+        else
+            start_local
+        fi
+        ;;
+    stop)
+        if service_installed; then
+            sudo systemctl stop "$SERVICE_NAME"
+            sudo systemctl --no-pager --full status "$SERVICE_NAME" || true
+        else
+            stop_local
+        fi
+        ;;
+    restart)
+        if service_installed; then
+            sudo systemctl restart "$SERVICE_NAME"
+            sudo systemctl --no-pager --full status "$SERVICE_NAME" || true
+        else
+            stop_local
+            start_local
+        fi
+        ;;
+    status)
+        if service_installed; then
+            sudo systemctl --no-pager --full status "$SERVICE_NAME" || true
+        else
+            status_local
+        fi
+        ;;
+    logs)
+        if service_installed; then
+            sudo journalctl -u "$SERVICE_NAME" -f
+        else
+            mkdir -p "$LOG_DIR"
+            touch "$LOG_FILE"
+            tail -f "$LOG_FILE"
+        fi
+        ;;
+    dashboard)
+        if service_installed; then
+            sudo journalctl -u "$SERVICE_NAME" -f | grep --line-buffered -E "\[dashboard\]|\[ALERT/"
+        else
+            mkdir -p "$LOG_DIR"
+            touch "$LOG_FILE"
+            tail -f "$LOG_FILE" | grep --line-buffered -E "\[dashboard\]|\[ALERT/"
+        fi
+        ;;
+    benchmark)
+        "$ROOT_DIR/tools/scripts/benchmark_phase3_overhead.sh"
+        ;;
+    validate-phase2)
+        "$ROOT_DIR/tools/scripts/validate_phase2_signal_quality.sh"
+        ;;
+    readiness)
+        bash "$ROOT_DIR/tools/scripts/check_deployment_readiness.sh"
+        ;;
+    soak)
+        bash "$ROOT_DIR/tools/scripts/soak_phase3_canary.sh"
+        ;;
+    install-service)
+        sudo "$ROOT_DIR/tools/scripts/install_phase3_service.sh"
+        ;;
+    uninstall-service)
+        if service_installed; then
+            sudo systemctl stop "$SERVICE_NAME" || true
+            sudo systemctl disable "$SERVICE_NAME" || true
+            sudo rm -f /etc/systemd/system/${SERVICE_NAME}.service
+            sudo systemctl daemon-reload
+            echo "service removed"
+        else
+            echo "service not installed"
+        fi
+        ;;
+    *)
+        usage
+        exit 1
+        ;;
+esac

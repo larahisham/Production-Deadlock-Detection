@@ -1,0 +1,208 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+CLI_BIN="$ROOT_DIR/tools/cli/deadlockctl"
+
+if [[ ! -x "$CLI_BIN" ]]; then
+    echo "error: cannot execute $CLI_BIN"
+    exit 1
+fi
+
+BOX_INNER=58
+
+clear_screen() {
+    printf "\033[2J\033[H"
+}
+
+draw_line() {
+    printf "%s+----------------------------------------------------------+%s\n"
+}
+
+print_centered_in_box() {
+    local text="$1"
+    local len pad_left pad_right
+
+    len=${#text}
+    if (( len > BOX_INNER )); then
+        text="${text:0:BOX_INNER}"
+        len=${#text}
+    fi
+
+    pad_left=$(( (BOX_INNER - len) / 2 ))
+    pad_right=$(( BOX_INNER - len - pad_left ))
+
+    printf "|%*s%s%*s|\n" "$pad_left" "" "$text" "$pad_right" ""
+}
+
+draw_spider() {
+    printf "%s"
+    print_centered_in_box ""
+    print_centered_in_box "###################################################"
+    print_centered_in_box "##################      ###########################"
+    print_centered_in_box "############    ########      #####################"
+    print_centered_in_box "################   #########  #####################"
+    print_centered_in_box "##################   #######  #####################"
+    print_centered_in_box "##################    ######             ##########"
+    print_centered_in_box "####################  ######                #######"
+    print_centered_in_box "####        ########  ######                 ######"
+    print_centered_in_box "##  ########    ####  ####                   ######"
+    print_centered_in_box "##############    ##  ###                  ########"
+    print_centered_in_box "################  ### ##                        ###"
+    print_centered_in_box "################  ##  ##                 ######  ##"
+    print_centered_in_box "############                        ###########  ##"
+    print_centered_in_box "##########    ######                           ####"
+    print_centered_in_box "########  ############          ##############  ###"
+    print_centered_in_box "######  #################             #########  ##"
+    print_centered_in_box "#########################  ###########  #######  ##"
+    print_centered_in_box "#######################  ##############  ######  ##"
+    print_centered_in_box "#######################  ##############  ##########"
+    print_centered_in_box "######################  ###############  ##########"
+    print_centered_in_box "######################  ###############  ##########"
+    print_centered_in_box "#####################  ############################"
+    print_centered_in_box "###################################################"
+    print_centered_in_box ""
+    printf "%s"
+}
+
+show_splash() {
+    clear_screen
+    draw_line
+    printf "%s|                DEADLOCK DETECTOR TERMINAL UI             |%s\n" 
+    draw_line
+    draw_spider
+    printf "%s+----------------------------------------------------------+%s\n"
+    printf "%s|            Production deadlock detection                 |%s\n"
+    printf "%s+----------------------------------------------------------+%s\n" 
+    sleep 1
+}
+
+show_menu() {
+    clear_screen
+    draw_line
+    printf "%s|                      MAIN CONTROL MENU                   |%s\n" 
+    draw_line
+    printf "|  1) Build detector                                       |\n"
+    printf "|  2) Start detector                                       |\n"
+    printf "|  3) Stop detector                                        |\n"
+    printf "|  4) Status                                               |\n"
+    printf "|  5) Dashboard stream                                     |\n"
+    printf "|  6) Logs stream                                          |\n"
+    printf "|  7) Validate phase2                                      |\n"
+    printf "|  8) Benchmark overhead                                   |\n"
+    printf "|  9) Install service                                      |\n"
+    printf "| 10) Uninstall service                                    |\n"
+    printf "| 11) Restart detector                                     |\n"
+    printf "|  q) Quit or ctrl+C                                       |\n"
+    draw_line
+    printf "%sChoose an option: %s" 
+}
+
+show_success() {
+    local msg="$1"
+    local msg_line
+    msg_line=$(printf "done: %s" "$msg")
+    printf "\n%s+----------------------------------------------------------+%s\n" 
+    printf "%s|                     ####   ####                            |%s\n" 
+    printf "%s|                   ####### #######                          |%s\n" 
+    printf "%s|                   ###############                          |%s\n" 
+    printf "%s|                    #############                           |%s\n" 
+    printf "%s|                      #########                             |%s\n" 
+    printf "%s|                        #####                               |%s\n"
+    printf "%s|                         ###                                |%s\n"
+    printf "%s|                          #                                 |%s\n"
+    printf "%s+------------------------------------------------------------+%s\n"
+}
+
+show_success() {
+    local msg="$1"
+    local msg_line
+    msg_line=$(printf "Ooops: %s" "$msg")E
+    printf "\n%s+----------------------------------------------------------+%s\n"
+    printf "%s|                     ####   ####                            |%s\n"
+    printf "%s|                   ####### #######                          |%s\n"
+    printf "%s|                   ####### #######                          |%s\n"
+    printf "%s|                    ###### ######                           |%s\n"
+    printf "%s|                      #### ####                             |%s\n"
+    printf "%s|                        ## ##                               |%s\n"
+    printf "%s|                         # #                                |%s\n"
+    printf "%s|                          #                                 |%s\n"
+    printf "%s+------------------------------------------------------------+%s\n" 
+}
+
+
+run_cmd() {
+    local label="$1"
+    shift
+
+    clear_screen
+    draw_line
+    printf "%s| Running: %-51s|%s\n"
+    draw_line
+
+    if "$@"; then
+        show_success "$label"
+    else
+        show_error "$label"
+    fi
+
+    printf "%sPress Enter to continue...%s" 
+    read -r _
+}
+
+main() {
+    local choice
+
+    show_splash
+    while true; do
+        show_menu
+        read -r choice
+        case "$choice" in
+            1)
+                run_cmd "build" "$CLI_BIN" build
+                ;;
+            2)
+                run_cmd "start" "$CLI_BIN" start
+                ;;
+            3)
+                run_cmd "stop" "$CLI_BIN" stop
+                ;;
+            4)
+                run_cmd "status" "$CLI_BIN" status
+                ;;
+            5)
+                run_cmd "dashboard" "$CLI_BIN" dashboard
+                ;;
+            6)
+                run_cmd "logs" "$CLI_BIN" logs
+                ;;
+            7)
+                run_cmd "validate-phase2" "$CLI_BIN" validate-phase2
+                ;;
+            8)
+                run_cmd "benchmark" "$CLI_BIN" benchmark
+                ;;
+            9)
+                run_cmd "install-service" "$CLI_BIN" install-service
+                ;;
+            10)
+                run_cmd "uninstall-service" "$CLI_BIN" uninstall-service
+                ;;
+            11)
+                run_cmd "restart" "$CLI_BIN" restart
+                ;;
+            q|Q)
+                clear_screen
+                printf "%s bye bye <3 %s\n" 
+                exit 0
+                ;;
+            *)
+                show_error "unknown option: $choice"
+                printf "%sPress Enter to continue...%s"
+                read -r _
+                ;;
+        esac
+    done
+}
+
+main

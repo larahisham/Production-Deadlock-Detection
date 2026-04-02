@@ -1,0 +1,20 @@
+{
+  "version": 4,
+  "configurations": [
+    {
+      "name": "Linux-eBPF",
+      "compilerPath": "/usr/bin/clang",
+      "intelliSenseMode": "linux-clang-x64",
+      "cStandard": "c17",
+      "includePath": [
+        "${workspaceFolder}/src/ebpf",
+        "/usr/include",
+        "/usr/include/bpf",
+        "/usr/include/x86_64-linux-gnu"
+      ],
+      "defines": [
+        "__TARGET_ARCH_x86"
+      ]
+    }
+  ]
+}
